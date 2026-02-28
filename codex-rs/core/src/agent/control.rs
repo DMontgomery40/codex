@@ -7,6 +7,7 @@ use crate::find_thread_path_by_id_str;
 use crate::rollout::RolloutRecorder;
 use crate::session_prefix::format_subagent_context_line;
 use crate::session_prefix::format_subagent_notification_message;
+use crate::state::TeamRegistry;
 use crate::state_db;
 use crate::thread_manager::ThreadManagerState;
 use codex_protocol::ThreadId;
@@ -21,6 +22,7 @@ use codex_protocol::protocol::TokenUsage;
 use codex_protocol::user_input::UserInput;
 use std::sync::Arc;
 use std::sync::Weak;
+use tokio::sync::Mutex;
 use tokio::sync::watch;
 
 const AGENT_NAMES: &str = include_str!("agent_names.txt");
@@ -52,6 +54,8 @@ pub(crate) struct AgentControl {
     /// `ThreadManagerState -> CodexThread -> Session -> SessionServices -> ThreadManagerState`.
     manager: Weak<ThreadManagerState>,
     state: Arc<Guards>,
+    /// Shared team registry for this user-session tree (lead + spawned agents).
+    team_registry: Arc<Mutex<TeamRegistry>>,
 }
 
 impl AgentControl {
@@ -61,6 +65,10 @@ impl AgentControl {
             manager,
             ..Default::default()
         }
+    }
+
+    pub(crate) fn team_registry(&self) -> Arc<Mutex<TeamRegistry>> {
+        Arc::clone(&self.team_registry)
     }
 
     /// Spawn a new agent thread and submit the initial prompt.
@@ -602,6 +610,53 @@ mod tests {
         let control = AgentControl::default();
         let got = control.get_status(ThreadId::new()).await;
         assert_eq!(got, AgentStatus::NotFound);
+    }
+
+    #[tokio::test]
+    async fn cloned_agent_control_shares_team_registry() {
+        let lead_control = AgentControl::default();
+        let member_control = lead_control.clone();
+        let lead_registry = lead_control.team_registry();
+        let member_registry = member_control.team_registry();
+
+        assert!(Arc::ptr_eq(&lead_registry, &member_registry));
+
+        let lead_thread_id = ThreadId::new();
+        let worker_thread_id = ThreadId::new();
+        let team_id = {
+            let mut registry = lead_registry.lock().await;
+            registry
+                .create_team(
+                    Some("alpha"),
+                    crate::state::TeamMember {
+                        name: "lead".to_string(),
+                        thread_id: lead_thread_id,
+                        nickname: None,
+                        role: Some("team-lead".to_string()),
+                    },
+                    vec![crate::state::TeamMember {
+                        name: "worker".to_string(),
+                        thread_id: worker_thread_id,
+                        nickname: None,
+                        role: Some("runtime-agent".to_string()),
+                    }],
+                    false,
+                )
+                .expect("team should be created")
+                .team_id
+        };
+
+        let shared_team = {
+            let registry = member_registry.lock().await;
+            registry.team(&team_id)
+        };
+        assert_eq!(
+            shared_team.and_then(|team| {
+                team.member_by_thread_id(worker_thread_id)
+                    .map(|member| member.name.clone())
+            }),
+            Some("worker".to_string())
+        );
     }
 
     #[tokio::test]
