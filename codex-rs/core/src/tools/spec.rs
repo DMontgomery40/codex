@@ -658,6 +658,130 @@ fn create_spawn_agent_tool(config: &ToolsConfig) -> ToolSpec {
     })
 }
 
+fn create_spawn_team_tool(config: &ToolsConfig) -> ToolSpec {
+    let mut agent_member_properties = BTreeMap::new();
+    agent_member_properties.insert(
+        "name".to_string(),
+        JsonSchema::String {
+            description: Some("Stable display name for this team member.".to_string()),
+        },
+    );
+    agent_member_properties.insert(
+        "message".to_string(),
+        JsonSchema::String {
+            description: Some(
+                "Initial plain-text task for this spawned member. Use either message or items."
+                    .to_string(),
+            ),
+        },
+    );
+    agent_member_properties.insert("items".to_string(), create_collab_input_items_schema());
+    agent_member_properties.insert(
+        "agent_type".to_string(),
+        JsonSchema::String {
+            description: Some(crate::agent::role::spawn_tool_spec::build(
+                &config.agent_roles,
+            )),
+        },
+    );
+    agent_member_properties.insert(
+        "fork_context".to_string(),
+        JsonSchema::Boolean {
+            description: Some(
+                "When true, fork the current thread history into this member before sending its initial prompt."
+                    .to_string(),
+            ),
+        },
+    );
+
+    let properties = BTreeMap::from([
+        (
+            "team_name".to_string(),
+            JsonSchema::String {
+                description: Some("Optional team name.".to_string()),
+            },
+        ),
+        (
+            "lead_name".to_string(),
+            JsonSchema::String {
+                description: Some(
+                    "Optional sender name for the orchestrator thread inside this team (defaults to orchestrator)."
+                        .to_string(),
+                ),
+            },
+        ),
+        (
+            "auto_cleanup".to_string(),
+            JsonSchema::Boolean {
+                description: Some(
+                    "When true, wait_team can automatically close and remove the team once members complete when wait_for_all is set."
+                        .to_string(),
+                ),
+            },
+        ),
+        (
+            "agents".to_string(),
+            JsonSchema::Array {
+                description: Some(
+                    "Members to spawn for this team. Each entry creates one sub-agent.".to_string(),
+                ),
+                items: Box::new(JsonSchema::Object {
+                    properties: agent_member_properties,
+                    required: Some(vec!["name".to_string()]),
+                    additional_properties: Some(false.into()),
+                }),
+            },
+        ),
+    ]);
+
+    ToolSpec::Function(ResponsesApiTool {
+        name: "spawn_team".to_string(),
+        description:
+            "Spawn a coordinated team of sub-agents and register them under a native team id for named messaging and team lifecycle tools."
+                .to_string(),
+        strict: false,
+        parameters: JsonSchema::Object {
+            properties,
+            required: Some(vec!["agents".to_string()]),
+            additional_properties: Some(false.into()),
+        },
+    })
+}
+
+fn create_list_teams_tool() -> ToolSpec {
+    ToolSpec::Function(ResponsesApiTool {
+        name: "list_teams".to_string(),
+        description: "List currently active spawned teams for this session tree.".to_string(),
+        strict: false,
+        parameters: JsonSchema::Object {
+            properties: BTreeMap::new(),
+            required: Some(vec![]),
+            additional_properties: Some(false.into()),
+        },
+    })
+}
+
+fn create_get_team_tool() -> ToolSpec {
+    let properties = BTreeMap::from([(
+        "team_id".to_string(),
+        JsonSchema::String {
+            description: Some("Team id returned by spawn_team.".to_string()),
+        },
+    )]);
+    ToolSpec::Function(ResponsesApiTool {
+        name: "get_team".to_string(),
+        description:
+            "Get team metadata and member mapping (including thread ids) for a spawned team."
+                .to_string(),
+        strict: false,
+        parameters: JsonSchema::Object {
+            properties,
+            required: Some(vec!["team_id".to_string()]),
+            additional_properties: Some(false.into()),
+        },
+    })
+}
+
 fn create_spawn_agents_on_csv_tool() -> ToolSpec {
     let mut properties = BTreeMap::new();
     properties.insert(
@@ -826,6 +950,160 @@ fn create_send_input_tool() -> ToolSpec {
     })
 }
 
+fn create_team_message_tool() -> ToolSpec {
+    let properties = BTreeMap::from([
+        (
+            "team_id".to_string(),
+            JsonSchema::String {
+                description: Some("Team id returned by spawn_team.".to_string()),
+            },
+        ),
+        (
+            "to".to_string(),
+            JsonSchema::String {
+                description: Some("Recipient member name inside the team.".to_string()),
+            },
+        ),
+        (
+            "from".to_string(),
+            JsonSchema::String {
+                description: Some(
+                    "Optional sender member name. If omitted, sender defaults to the calling thread's team identity."
+                        .to_string(),
+                ),
+            },
+        ),
+        (
+            "message".to_string(),
+            JsonSchema::String {
+                description: Some(
+                    "Legacy plain-text message to send. Use either message or items.".to_string(),
+                ),
+            },
+        ),
+        ("items".to_string(), create_collab_input_items_schema()),
+        (
+            "interrupt".to_string(),
+            JsonSchema::Boolean {
+                description: Some(
+                    "When true, interrupt the recipient before delivering the message."
+                        .to_string(),
+                ),
+            },
+        ),
+    ]);
+
+    ToolSpec::Function(ResponsesApiTool {
+        name: "team_message".to_string(),
+        description:
+            "Send a message between named members in a spawned team. Uses native agent control under the hood."
+                .to_string(),
+        strict: false,
+        parameters: JsonSchema::Object {
+            properties,
+            required: Some(vec!["team_id".to_string(), "to".to_string()]),
+            additional_properties: Some(false.into()),
+        },
+    })
+}
+
+fn create_team_broadcast_tool() -> ToolSpec {
+    let properties = BTreeMap::from([
+        (
+            "team_id".to_string(),
+            JsonSchema::String {
+                description: Some("Team id returned by spawn_team.".to_string()),
+            },
+        ),
+        (
+            "from".to_string(),
+            JsonSchema::String {
+                description: Some(
+                    "Optional sender member name. If omitted, sender defaults to the calling thread's team identity."
+                        .to_string(),
+                ),
+            },
+        ),
+        (
+            "message".to_string(),
+            JsonSchema::String {
+                description: Some(
+                    "Legacy plain-text message to send. Use either message or items.".to_string(),
+                ),
+            },
+        ),
+        ("items".to_string(), create_collab_input_items_schema()),
+        (
+            "interrupt".to_string(),
+            JsonSchema::Boolean {
+                description: Some(
+                    "When true, interrupt each recipient before delivering the message."
+                        .to_string(),
+                ),
+            },
+        ),
+        (
+            "include_sender".to_string(),
+            JsonSchema::Boolean {
+                description: Some(
+                    "When true, also deliver the broadcast message to the sender.".to_string(),
+                ),
+            },
+        ),
+    ]);
+
+    ToolSpec::Function(ResponsesApiTool {
+        name: "team_broadcast".to_string(),
+        description:
+            "Broadcast a message to team members by name and return per-recipient delivery results."
+                .to_string(),
+        strict: false,
+        parameters: JsonSchema::Object {
+            properties,
+            required: Some(vec!["team_id".to_string()]),
+            additional_properties: Some(false.into()),
+        },
+    })
+}
+
+fn create_team_member_status_tool() -> ToolSpec {
+    let properties = BTreeMap::from([
+        (
+            "team_id".to_string(),
+            JsonSchema::String {
+                description: Some("Team id returned by spawn_team.".to_string()),
+            },
+        ),
+        (
+            "include_lead".to_string(),
+            JsonSchema::Boolean {
+                description: Some("When true, include the lead member in status output.".to_string()),
+            },
+        ),
+        (
+            "members".to_string(),
+            JsonSchema::Array {
+                description: Some(
+                    "Optional subset of member names to include (defaults to all non-lead members)."
+                        .to_string(),
+                ),
+                items: Box::new(JsonSchema::String { description: None }),
+            },
+        ),
+    ]);
+
+    ToolSpec::Function(ResponsesApiTool {
+        name: "team_member_status".to_string(),
+        description: "Get current agent runtime status for selected team members.".to_string(),
+        strict: false,
+        parameters: JsonSchema::Object {
+            properties,
+            required: Some(vec!["team_id".to_string()]),
+            additional_properties: Some(false.into()),
+        },
+    })
+}
+
 fn create_resume_agent_tool() -> ToolSpec {
     let mut properties = BTreeMap::new();
     properties.insert(
@@ -878,6 +1156,72 @@ fn create_wait_tool() -> ToolSpec {
         parameters: JsonSchema::Object {
             properties,
             required: Some(vec!["ids".to_string()]),
+            additional_properties: Some(false.into()),
+        },
+    })
+}
+
+fn create_wait_team_tool() -> ToolSpec {
+    let properties = BTreeMap::from([
+        (
+            "team_id".to_string(),
+            JsonSchema::String {
+                description: Some("Team id returned by spawn_team.".to_string()),
+            },
+        ),
+        (
+            "timeout_ms".to_string(),
+            JsonSchema::Number {
+                description: Some(format!(
+                    "Optional timeout in milliseconds. Defaults to {DEFAULT_WAIT_TIMEOUT_MS}, min {MIN_WAIT_TIMEOUT_MS}, max {MAX_WAIT_TIMEOUT_MS}."
+                )),
+            },
+        ),
+        (
+            "include_lead".to_string(),
+            JsonSchema::Boolean {
+                description: Some("When true, include the lead member in wait targets.".to_string()),
+            },
+        ),
+        (
+            "members".to_string(),
+            JsonSchema::Array {
+                description: Some(
+                    "Optional subset of member names to wait on (defaults to all non-lead members)."
+                        .to_string(),
+                ),
+                items: Box::new(JsonSchema::String { description: None }),
+            },
+        ),
+        (
+            "wait_for_all".to_string(),
+            JsonSchema::Boolean {
+                description: Some(
+                    "When true, wait until all selected members reach final status or timeout."
+                        .to_string(),
+                ),
+            },
+        ),
+        (
+            "auto_cleanup".to_string(),
+            JsonSchema::Boolean {
+                description: Some(
+                    "When true and wait_for_all succeeds, automatically close and remove the team."
+                        .to_string(),
+                ),
+            },
+        ),
+    ]);
+
+    ToolSpec::Function(ResponsesApiTool {
+        name: "wait_team".to_string(),
+        description:
+            "Wait on one or more members of a spawned team and return status keyed by member name."
+                .to_string(),
+        strict: false,
+        parameters: JsonSchema::Object {
+            properties,
+            required: Some(vec!["team_id".to_string()]),
             additional_properties: Some(false.into()),
         },
     })
@@ -985,6 +1329,71 @@ fn create_close_agent_tool() -> ToolSpec {
         parameters: JsonSchema::Object {
             properties,
             required: Some(vec!["id".to_string()]),
+            additional_properties: Some(false.into()),
+        },
+    })
+}
+
+fn create_close_team_tool() -> ToolSpec {
+    let properties = BTreeMap::from([
+        (
+            "team_id".to_string(),
+            JsonSchema::String {
+                description: Some("Team id returned by spawn_team.".to_string()),
+            },
+        ),
+        (
+            "include_lead".to_string(),
+            JsonSchema::Boolean {
+                description: Some("When true, also close the team lead thread.".to_string()),
+            },
+        ),
+        (
+            "remove".to_string(),
+            JsonSchema::Boolean {
+                description: Some(
+                    "When true, remove the team registry entry after closing members.".to_string(),
+                ),
+            },
+        ),
+    ]);
+
+    ToolSpec::Function(ResponsesApiTool {
+        name: "close_team".to_string(),
+        description: "Close team members and optionally remove the team registry entry."
+            .to_string(),
+        strict: false,
+        parameters: JsonSchema::Object {
+            properties,
+            required: Some(vec!["team_id".to_string()]),
+            additional_properties: Some(false.into()),
+        },
+    })
+}
+
+fn create_team_cleanup_tool() -> ToolSpec {
+    let properties = BTreeMap::from([
+        (
+            "team_id".to_string(),
+            JsonSchema::String {
+                description: Some("Team id returned by spawn_team.".to_string()),
+            },
+        ),
+        (
+            "include_lead".to_string(),
+            JsonSchema::Boolean {
+                description: Some("When true, also close the team lead thread.".to_string()),
+            },
+        ),
+    ]);
+
+    ToolSpec::Function(ResponsesApiTool {
+        name: "team_cleanup".to_string(),
+        description: "Close team members and remove team registry state in one call.".to_string(),
+        strict: false,
+        parameters: JsonSchema::Object {
+            properties,
+            required: Some(vec!["team_id".to_string()]),
             additional_properties: Some(false.into()),
         },
     })
@@ -1825,15 +2234,33 @@ pub(crate) fn build_specs(
     if config.collab_tools {
         let multi_agent_handler = Arc::new(MultiAgentHandler);
         builder.push_spec(create_spawn_agent_tool(config));
+        builder.push_spec(create_spawn_team_tool(config));
+        builder.push_spec(create_list_teams_tool());
+        builder.push_spec(create_get_team_tool());
         builder.push_spec(create_send_input_tool());
+        builder.push_spec(create_team_member_status_tool());
+        builder.push_spec(create_team_message_tool());
+        builder.push_spec(create_team_broadcast_tool());
         builder.push_spec(create_resume_agent_tool());
         builder.push_spec(create_wait_tool());
+        builder.push_spec(create_wait_team_tool());
         builder.push_spec(create_close_agent_tool());
+        builder.push_spec(create_close_team_tool());
+        builder.push_spec(create_team_cleanup_tool());
         builder.register_handler("spawn_agent", multi_agent_handler.clone());
+        builder.register_handler("spawn_team", multi_agent_handler.clone());
+        builder.register_handler("list_teams", multi_agent_handler.clone());
+        builder.register_handler("get_team", multi_agent_handler.clone());
         builder.register_handler("send_input", multi_agent_handler.clone());
+        builder.register_handler("team_member_status", multi_agent_handler.clone());
+        builder.register_handler("team_message", multi_agent_handler.clone());
+        builder.register_handler("team_broadcast", multi_agent_handler.clone());
         builder.register_handler("resume_agent", multi_agent_handler.clone());
         builder.register_handler("wait", multi_agent_handler.clone());
-        builder.register_handler("close_agent", multi_agent_handler);
+        builder.register_handler("wait_team", multi_agent_handler.clone());
+        builder.register_handler("close_agent", multi_agent_handler.clone());
+        builder.register_handler("close_team", multi_agent_handler.clone());
+        builder.register_handler("team_cleanup", multi_agent_handler);
     }
 
     if config.agent_jobs_tools {
@@ -2114,9 +2541,18 @@ mod tests {
             &tools,
             &[
                 "spawn_agent",
+                "spawn_team",
+                "list_teams",
+                "get_team",
                 "send_input",
+                "team_member_status",
+                "team_message",
+                "team_broadcast",
                 "wait",
+                "wait_team",
                 "close_agent",
+                "close_team",
+                "team_cleanup",
                 "spawn_agents_on_csv",
             ],
         );
@@ -2143,10 +2579,19 @@ mod tests {
             &tools,
             &[
                 "spawn_agent",
+                "spawn_team",
+                "list_teams",
+                "get_team",
                 "send_input",
+                "team_member_status",
+                "team_message",
+                "team_broadcast",
                 "resume_agent",
                 "wait",
+                "wait_team",
                 "close_agent",
+                "close_team",
+                "team_cleanup",
                 "spawn_agents_on_csv",
                 "report_agent_job_result",
             ],
