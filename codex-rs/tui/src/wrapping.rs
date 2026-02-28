@@ -47,11 +47,10 @@ where
     for (line_index, line) in textwrap::wrap(text, &opts).iter().enumerate() {
         match line {
             std::borrow::Cow::Borrowed(slice) => {
-                let start = unsafe { slice.as_ptr().offset_from(text.as_ptr()) as usize };
-                let end = start + slice.len();
-                let trailing_spaces = text[end..].chars().take_while(|c| *c == ' ').count();
-                lines.push(start..end + trailing_spaces + 1);
-                cursor = end + trailing_spaces;
+                let mapped = map_borrowed_wrapped_line_to_range(text, cursor, slice);
+                let trailing_spaces = text[mapped.end..].chars().take_while(|c| *c == ' ').count();
+                lines.push(mapped.start..mapped.end + trailing_spaces + 1);
+                cursor = mapped.end + trailing_spaces;
             }
             std::borrow::Cow::Owned(slice) => {
                 let synthetic_prefix = if line_index == 0 {
@@ -82,10 +81,9 @@ where
     for (line_index, line) in textwrap::wrap(text, &opts).iter().enumerate() {
         match line {
             std::borrow::Cow::Borrowed(slice) => {
-                let start = unsafe { slice.as_ptr().offset_from(text.as_ptr()) as usize };
-                let end = start + slice.len();
-                lines.push(start..end);
-                cursor = end;
+                let mapped = map_borrowed_wrapped_line_to_range(text, cursor, slice);
+                lines.push(mapped.clone());
+                cursor = mapped.end;
             }
             std::borrow::Cow::Owned(slice) => {
                 let synthetic_prefix = if line_index == 0 {
@@ -100,6 +98,50 @@ where
         }
     }
     lines
+}
+
+/// Maps a borrowed wrapped line back to a byte range in `text`.
+///
+/// Most borrowed slices point directly into `text`, but empty slices (for
+/// example when wrapping text that ends with `\n`) may come from a shared
+/// static allocation. In that case pointer arithmetic is invalid; fall back to
+/// a cursor-aware substring search.
+fn map_borrowed_wrapped_line_to_range(text: &str, cursor: usize, wrapped: &str) -> Range<usize> {
+    let cursor = cursor.min(text.len());
+
+    if wrapped.is_empty() {
+        return cursor..cursor;
+    }
+
+    let text_start = text.as_ptr() as usize;
+    let text_end = text_start.saturating_add(text.len());
+    let wrapped_start = wrapped.as_ptr() as usize;
+    let wrapped_end = wrapped_start.saturating_add(wrapped.len());
+    if wrapped_start >= text_start && wrapped_end <= text_end {
+        let start = wrapped_start - text_start;
+        return start..start + wrapped.len();
+    }
+
+    if let Some(relative_start) = text[cursor..].find(wrapped) {
+        let start = cursor + relative_start;
+        return start..start + wrapped.len();
+    }
+
+    if let Some(start) = text.find(wrapped) {
+        tracing::warn!(
+            wrapped = %wrapped,
+            cursor,
+            "wrap_ranges: borrowed slice pointer was external; used global fallback match"
+        );
+        return start..start + wrapped.len();
+    }
+
+    tracing::warn!(
+        wrapped = %wrapped,
+        cursor,
+        "wrap_ranges: failed to map borrowed wrapped line; returning empty range"
+    );
+    cursor..cursor
 }
 
 /// Maps an owned (materialized) wrapped line back to a byte range in `text`.
@@ -1403,5 +1445,22 @@ them."#
 
         assert_eq!(rebuilt, text);
         assert!(ranges.len() > 1, "expected wrapped ranges, got: {ranges:?}");
+    }
+
+    #[test]
+    fn wrap_ranges_handles_trailing_newline_without_out_of_bounds_ranges() {
+        let text = "/quit\n";
+        let ranges = wrap_ranges(text, Options::new(80));
+        assert!(!ranges.is_empty());
+        for range in ranges {
+            assert!(
+                range.start <= text.len(),
+                "range start out of bounds: {range:?} for {text:?}"
+            );
+            assert!(
+                range.end <= text.len().saturating_add(1),
+                "range end out of bounds: {range:?} for {text:?}"
+            );
+        }
     }
 }
