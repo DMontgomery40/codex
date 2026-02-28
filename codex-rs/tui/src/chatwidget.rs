@@ -3606,6 +3606,15 @@ impl ChatWidget {
             SlashCommand::Agent => {
                 self.app_event_tx.send(AppEvent::OpenAgentPicker);
             }
+            SlashCommand::Team => {
+                self.add_info_message(
+                    "Usage: /team <create|list|members|send|broadcast|wait|close|cleanup> [json-args]".to_string(),
+                    Some(
+                        "Example: /team send {\"team_id\":\"team-1\",\"to\":\"worker\",\"message\":\"Run tests\"}"
+                            .to_string(),
+                    ),
+                );
+            }
             SlashCommand::Approvals => {
                 self.open_permissions_popup();
             }
@@ -3914,6 +3923,126 @@ impl ChatWidget {
                         path: prepared_args,
                     });
                 self.bottom_pane.drain_pending_submission_state();
+            }
+            SlashCommand::Team if !trimmed.is_empty() => {
+                let mut parts = trimmed.splitn(2, char::is_whitespace);
+                let Some(subcommand) = parts.next() else {
+                    self.dispatch_command(SlashCommand::Team);
+                    return;
+                };
+                let subcommand = subcommand.to_ascii_lowercase();
+                let raw_payload = parts
+                    .next()
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty());
+
+                let mut args_value = serde_json::Value::Object(serde_json::Map::new());
+                let tool_name = match subcommand.as_str() {
+                    "create" => "spawn_team",
+                    "list" => {
+                        if raw_payload.is_some() {
+                            self.add_error_message(
+                                "`/team list` does not accept arguments.".to_string(),
+                            );
+                            return;
+                        }
+                        "list_teams"
+                    }
+                    "members" => {
+                        let Some(payload) = raw_payload else {
+                            self.add_error_message(
+                                "Usage: /team members <team_id> or /team members {\"team_id\":\"team-1\"}".to_string(),
+                            );
+                            return;
+                        };
+                        args_value = if payload.starts_with('{') {
+                            match serde_json::from_str(payload) {
+                                Ok(value) => value,
+                                Err(err) => {
+                                    self.add_error_message(format!(
+                                        "Invalid JSON args for `/team members`: {err}"
+                                    ));
+                                    return;
+                                }
+                            }
+                        } else {
+                            serde_json::json!({ "team_id": payload })
+                        };
+                        "get_team"
+                    }
+                    "send" => "team_message",
+                    "broadcast" => "team_broadcast",
+                    "wait" => "wait_team",
+                    "close" => "close_team",
+                    "cleanup" => "team_cleanup",
+                    _ => {
+                        self.add_error_message(format!("Unknown /team subcommand: {subcommand}"));
+                        self.dispatch_command(SlashCommand::Team);
+                        return;
+                    }
+                };
+
+                if !matches!(subcommand.as_str(), "list" | "members") {
+                    let Some(payload) = raw_payload else {
+                        self.add_error_message(format!(
+                            "`/team {subcommand}` requires JSON arguments."
+                        ));
+                        return;
+                    };
+                    args_value = match serde_json::from_str(payload) {
+                        Ok(value) => value,
+                        Err(err) => {
+                            self.add_error_message(format!(
+                                "Invalid JSON args for `/team {subcommand}`: {err}"
+                            ));
+                            return;
+                        }
+                    };
+                }
+
+                if !args_value.is_object() {
+                    self.add_error_message(format!(
+                        "`/team {subcommand}` arguments must be a JSON object."
+                    ));
+                    return;
+                }
+                let args_json = match serde_json::to_string_pretty(&args_value) {
+                    Ok(serialized) => serialized,
+                    Err(err) => {
+                        self.add_error_message(format!(
+                            "Failed to serialize `/team {subcommand}` arguments: {err}"
+                        ));
+                        return;
+                    }
+                };
+                let prompt = format!(
+                    "Run `/team {subcommand}` by calling the `{tool_name}` tool exactly once with the JSON arguments below.\nDo not simulate tool output.\n\n```json\n{args_json}\n```\n\nReturn the tool result and a short operator-focused summary."
+                );
+
+                let Some((_prepared_args, _prepared_elements)) =
+                    self.bottom_pane.prepare_inline_args_submission(true)
+                else {
+                    return;
+                };
+                let local_images = self
+                    .bottom_pane
+                    .take_recent_submission_images_with_placeholders();
+                let remote_image_urls = self.take_remote_image_urls();
+                let user_message = UserMessage {
+                    text: prompt,
+                    local_images,
+                    remote_image_urls,
+                    text_elements: Vec::new(),
+                    mention_bindings: Vec::new(),
+                };
+                if self.is_session_configured() {
+                    self.reasoning_buffer.clear();
+                    self.full_reasoning_buffer.clear();
+                    self.set_status_header(String::from("Working"));
+                    self.submit_user_message(user_message);
+                } else {
+                    self.queue_user_message(user_message);
+                }
             }
             _ => self.dispatch_command(cmd),
         }

@@ -4460,6 +4460,139 @@ async fn plan_slash_command_with_args_submits_prompt_in_plan_mode() {
     assert_eq!(chat.active_collaboration_mode_kind(), ModeKind::Plan);
 }
 
+fn configure_session(chat: &mut ChatWidget) {
+    let configured = codex_protocol::protocol::SessionConfiguredEvent {
+        session_id: ThreadId::new(),
+        forked_from_id: None,
+        thread_name: None,
+        model: "test-model".to_string(),
+        model_provider_id: "test-provider".to_string(),
+        approval_policy: AskForApproval::Never,
+        sandbox_policy: SandboxPolicy::new_read_only_policy(),
+        cwd: PathBuf::from("/home/user/project"),
+        reasoning_effort: Some(ReasoningEffortConfig::default()),
+        history_log_id: 0,
+        history_entry_count: 0,
+        initial_messages: None,
+        network_proxy: None,
+        rollout_path: None,
+    };
+    chat.handle_codex_event(Event {
+        id: "configured".into(),
+        msg: EventMsg::SessionConfigured(configured),
+    });
+}
+
+#[tokio::test]
+async fn team_slash_command_without_args_shows_usage() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
+    chat.dispatch_command(SlashCommand::Team);
+
+    let cells = drain_insert_history(&mut rx);
+    assert_eq!(cells.len(), 1);
+    let rendered = lines_to_single_string(&cells[0]);
+    assert!(
+        rendered.contains("Usage: /team"),
+        "expected usage message, got: {rendered}"
+    );
+}
+
+#[tokio::test]
+async fn team_slash_list_submits_list_teams_prompt() {
+    let (mut chat, _rx, mut op_rx) = make_chatwidget_manual(None).await;
+    configure_session(&mut chat);
+
+    chat.bottom_pane
+        .set_composer_text("/team list".to_string(), Vec::new(), Vec::new());
+    chat.handle_key_event(KeyEvent::from(KeyCode::Enter));
+
+    let items = match next_submit_op(&mut op_rx) {
+        Op::UserTurn { items, .. } => items,
+        other => panic!("expected Op::UserTurn, got {other:?}"),
+    };
+    assert_eq!(items.len(), 1);
+    let UserInput::Text { text, .. } = &items[0] else {
+        panic!("expected text user input");
+    };
+    assert!(text.contains("`list_teams`"));
+    assert!(text.contains("```json"));
+    assert!(text.contains("{}"));
+}
+
+#[tokio::test]
+async fn team_slash_members_accepts_team_id_shorthand() {
+    let (mut chat, _rx, mut op_rx) = make_chatwidget_manual(None).await;
+    configure_session(&mut chat);
+
+    chat.bottom_pane
+        .set_composer_text("/team members team-42".to_string(), Vec::new(), Vec::new());
+    chat.handle_key_event(KeyEvent::from(KeyCode::Enter));
+
+    let items = match next_submit_op(&mut op_rx) {
+        Op::UserTurn { items, .. } => items,
+        other => panic!("expected Op::UserTurn, got {other:?}"),
+    };
+    let UserInput::Text { text, .. } = &items[0] else {
+        panic!("expected text user input");
+    };
+    assert!(text.contains("`get_team`"));
+    assert!(text.contains("\"team_id\": \"team-42\""));
+}
+
+#[tokio::test]
+async fn team_slash_rejects_invalid_json_args() {
+    let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(None).await;
+    configure_session(&mut chat);
+    while op_rx.try_recv().is_ok() {}
+
+    chat.bottom_pane
+        .set_composer_text("/team send nope".to_string(), Vec::new(), Vec::new());
+    chat.handle_key_event(KeyEvent::from(KeyCode::Enter));
+
+    assert_eq!(chat.bottom_pane.composer_text(), "/team send nope");
+    assert!(
+        matches!(op_rx.try_recv(), Err(TryRecvError::Empty)),
+        "invalid args should not submit an op"
+    );
+    let cells = drain_insert_history(&mut rx);
+    let rendered = cells
+        .iter()
+        .map(|lines| lines_to_single_string(lines))
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(
+        rendered.contains("Invalid JSON args for `/team send`"),
+        "expected JSON parse error, got: {rendered}"
+    );
+}
+
+#[tokio::test]
+async fn team_slash_rejects_unknown_subcommand_without_consuming_input() {
+    let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(None).await;
+    configure_session(&mut chat);
+    while op_rx.try_recv().is_ok() {}
+
+    chat.bottom_pane
+        .set_composer_text("/team nope".to_string(), Vec::new(), Vec::new());
+    chat.handle_key_event(KeyEvent::from(KeyCode::Enter));
+
+    assert_eq!(chat.bottom_pane.composer_text(), "/team nope");
+    assert!(
+        matches!(op_rx.try_recv(), Err(TryRecvError::Empty)),
+        "unknown subcommand should not submit an op"
+    );
+    let cells = drain_insert_history(&mut rx);
+    let rendered = cells
+        .iter()
+        .map(|lines| lines_to_single_string(lines))
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(
+        rendered.contains("Unknown /team subcommand: nope"),
+        "expected unknown-subcommand error, got: {rendered}"
+    );
+}
+
 #[tokio::test]
 async fn collaboration_modes_defaults_to_code_on_startup() {
     let codex_home = tempdir().expect("tempdir");
