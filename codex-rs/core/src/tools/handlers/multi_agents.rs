@@ -81,10 +81,16 @@ impl ToolHandler for MultiAgentHandler {
         match tool_name.as_str() {
             "spawn_agent" => spawn::handle(session, turn, call_id, arguments).await,
             "spawn_team" => team::spawn_team(session, turn, call_id, arguments).await,
-            "list_teams" => team::list_teams(session, call_id, arguments).await,
-            "get_team" => team::get_team(session, call_id, arguments).await,
+            "list_teams" => team::list_teams(session, turn, call_id, arguments).await,
+            "get_team" => team::get_team(session, turn, call_id, arguments).await,
             "send_input" => send_input::handle(session, turn, call_id, arguments).await,
-            "team_member_status" => team::team_member_status(session, call_id, arguments).await,
+            "task_create" => task::task_create(session, turn, call_id, arguments).await,
+            "task_list" => task::task_list(session, turn, call_id, arguments).await,
+            "task_update" => task::task_update(session, turn, call_id, arguments).await,
+            "task_get" => task::task_get(session, turn, call_id, arguments).await,
+            "team_member_status" => {
+                team::team_member_status(session, turn, call_id, arguments).await
+            }
             "team_message" => team::team_message(session, turn, call_id, arguments).await,
             "team_broadcast" => team::team_broadcast(session, turn, call_id, arguments).await,
             "resume_agent" => resume_agent::handle(session, turn, call_id, arguments).await,
@@ -438,6 +444,17 @@ mod team {
         submission_id: String,
     }
 
+    async fn configure_team_registry(
+        session: &Session,
+        turn: &TurnContext,
+    ) -> Result<(), FunctionCallError> {
+        let team_registry = session.services.agent_control.team_registry();
+        let mut registry = team_registry.lock().await;
+        registry
+            .configure_persistence(turn.config.codex_home.as_path())
+            .map_err(FunctionCallError::Fatal)
+    }
+
     pub async fn spawn_team(
         session: Arc<Session>,
         turn: Arc<TurnContext>,
@@ -445,6 +462,7 @@ mod team {
         arguments: String,
     ) -> Result<ToolOutput, FunctionCallError> {
         let args: SpawnTeamArgs = parse_arguments(&arguments)?;
+        configure_team_registry(session.as_ref(), turn.as_ref()).await?;
         if args.agents.is_empty() {
             return Err(FunctionCallError::RespondToModel(
                 "agents must be non-empty".to_string(),
@@ -575,10 +593,12 @@ mod team {
 
     pub async fn list_teams(
         session: Arc<Session>,
+        turn: Arc<TurnContext>,
         call_id: String,
         arguments: String,
     ) -> Result<ToolOutput, FunctionCallError> {
         let _args: ListTeamsArgs = parse_arguments(&arguments)?;
+        configure_team_registry(session.as_ref(), turn.as_ref()).await?;
         let team_registry = session.services.agent_control.team_registry();
         let registry = team_registry.lock().await;
         let mut teams = registry
@@ -610,10 +630,12 @@ mod team {
 
     pub async fn get_team(
         session: Arc<Session>,
+        turn: Arc<TurnContext>,
         call_id: String,
         arguments: String,
     ) -> Result<ToolOutput, FunctionCallError> {
         let args: GetTeamArgs = parse_arguments(&arguments)?;
+        configure_team_registry(session.as_ref(), turn.as_ref()).await?;
         let team = team_snapshot(session.as_ref(), &args.team_id).await?;
         let mut members = team
             .members()
@@ -646,10 +668,12 @@ mod team {
 
     pub async fn team_member_status(
         session: Arc<Session>,
+        turn: Arc<TurnContext>,
         call_id: String,
         arguments: String,
     ) -> Result<ToolOutput, FunctionCallError> {
         let args: TeamMemberStatusArgs = parse_arguments(&arguments)?;
+        configure_team_registry(session.as_ref(), turn.as_ref()).await?;
         let team = team_snapshot(session.as_ref(), &args.team_id).await?;
         let include_lead = args.include_lead.unwrap_or(false);
         let member_filter = parse_member_filter(args.members)?;
@@ -704,6 +728,7 @@ mod team {
         arguments: String,
     ) -> Result<ToolOutput, FunctionCallError> {
         let args: TeamMessageArgs = parse_arguments(&arguments)?;
+        configure_team_registry(session.as_ref(), turn.as_ref()).await?;
         let team = team_snapshot(session.as_ref(), &args.team_id).await?;
         let sender = resolve_sender(
             &team,
@@ -761,6 +786,7 @@ mod team {
         arguments: String,
     ) -> Result<ToolOutput, FunctionCallError> {
         let args: TeamBroadcastArgs = parse_arguments(&arguments)?;
+        configure_team_registry(session.as_ref(), turn.as_ref()).await?;
         let team = team_snapshot(session.as_ref(), &args.team_id).await?;
         let sender = resolve_sender(
             &team,
@@ -842,6 +868,7 @@ mod team {
         arguments: String,
     ) -> Result<ToolOutput, FunctionCallError> {
         let args: WaitTeamArgs = parse_arguments(&arguments)?;
+        configure_team_registry(session.as_ref(), turn.as_ref()).await?;
         let team = team_snapshot(session.as_ref(), &args.team_id).await?;
         let include_lead = args.include_lead.unwrap_or(false);
         let member_filter = parse_member_filter(args.members)?;
@@ -907,7 +934,7 @@ mod team {
                     let pending_before = pending.clone();
                     let mut receiver_thread_ids =
                         pending_before.iter().copied().collect::<Vec<_>>();
-                    receiver_thread_ids.sort_by_key(|thread_id| thread_id.to_string());
+                    receiver_thread_ids.sort_by_key(std::string::ToString::to_string);
                     let mut receiver_agents = members
                         .iter()
                         .filter(|member| pending_before.contains(&member.thread_id))
@@ -1098,6 +1125,7 @@ mod team {
         arguments: String,
     ) -> Result<ToolOutput, FunctionCallError> {
         let args: CloseTeamArgs = parse_arguments(&arguments)?;
+        configure_team_registry(session.as_ref(), turn.as_ref()).await?;
         let team = team_snapshot(session.as_ref(), &args.team_id).await?;
         let include_lead = args.include_lead.unwrap_or(false);
 
@@ -1172,6 +1200,7 @@ mod team {
         arguments: String,
     ) -> Result<ToolOutput, FunctionCallError> {
         let args: TeamCleanupArgs = parse_arguments(&arguments)?;
+        configure_team_registry(session.as_ref(), turn.as_ref()).await?;
         let close_args = CloseTeamArgs {
             team_id: args.team_id,
             include_lead: args.include_lead,
@@ -1318,6 +1347,207 @@ mod team {
                 "expected function text output".to_string(),
             )),
         }
+    }
+}
+
+mod task {
+    use super::*;
+    use crate::state::NewTask;
+    use crate::state::TaskStatus;
+    use crate::state::TaskStore;
+    use crate::state::TaskUpdate;
+    use serde_json::Value;
+    use serde_json::json;
+    use std::collections::BTreeMap;
+    use std::sync::Arc;
+
+    #[derive(Debug, Deserialize)]
+    struct TaskCreateArgs {
+        team_id: String,
+        subject: String,
+        description: Option<String>,
+        active_form: Option<String>,
+        owner: Option<String>,
+        blocks: Option<Vec<String>>,
+        blocked_by: Option<Vec<String>>,
+        metadata: Option<BTreeMap<String, Value>>,
+    }
+
+    #[derive(Debug, Deserialize)]
+    struct TaskListArgs {
+        team_id: String,
+    }
+
+    #[derive(Debug, Deserialize)]
+    struct TaskGetArgs {
+        team_id: String,
+        task_id: String,
+    }
+
+    #[derive(Debug, Deserialize)]
+    struct TaskUpdateArgs {
+        team_id: String,
+        task_id: String,
+        status: Option<TaskStatus>,
+        owner: Option<Option<String>>,
+        subject: Option<String>,
+        description: Option<Option<String>>,
+        active_form: Option<Option<String>>,
+        blocks: Option<Vec<String>>,
+        blocked_by: Option<Vec<String>>,
+        metadata: Option<BTreeMap<String, Value>>,
+    }
+
+    #[derive(Debug, Serialize)]
+    struct TaskSummary {
+        id: String,
+        subject: String,
+        status: TaskStatus,
+        owner: Option<String>,
+        blocked_by: Vec<String>,
+    }
+
+    pub async fn task_create(
+        session: Arc<Session>,
+        turn: Arc<TurnContext>,
+        _call_id: String,
+        arguments: String,
+    ) -> Result<ToolOutput, FunctionCallError> {
+        let args: TaskCreateArgs = parse_arguments(&arguments)?;
+        let store = task_store_for_team(session.as_ref(), turn.as_ref(), &args.team_id).await?;
+        let task = store
+            .create_task(NewTask {
+                subject: args.subject,
+                description: args.description,
+                owner: args.owner,
+                active_form: args.active_form,
+                blocks: args.blocks.unwrap_or_default(),
+                blocked_by: args.blocked_by.unwrap_or_default(),
+                metadata: args.metadata.unwrap_or_default(),
+            })
+            .map_err(FunctionCallError::RespondToModel)?;
+
+        let content = serde_json::to_string(&json!({ "task": task })).map_err(|err| {
+            FunctionCallError::Fatal(format!("failed to serialize task_create result: {err}"))
+        })?;
+
+        Ok(ToolOutput::Function {
+            body: FunctionCallOutputBody::Text(content),
+            success: Some(true),
+        })
+    }
+
+    pub async fn task_list(
+        session: Arc<Session>,
+        turn: Arc<TurnContext>,
+        _call_id: String,
+        arguments: String,
+    ) -> Result<ToolOutput, FunctionCallError> {
+        let args: TaskListArgs = parse_arguments(&arguments)?;
+        let store = task_store_for_team(session.as_ref(), turn.as_ref(), &args.team_id).await?;
+        let tasks = store
+            .list_tasks()
+            .map_err(FunctionCallError::RespondToModel)?;
+        let summaries: Vec<TaskSummary> = tasks
+            .into_iter()
+            .map(|t| TaskSummary {
+                id: t.id,
+                subject: t.subject,
+                status: t.status,
+                owner: t.owner,
+                blocked_by: t.blocked_by,
+            })
+            .collect();
+
+        let content = serde_json::to_string(&json!({ "tasks": summaries })).map_err(|err| {
+            FunctionCallError::Fatal(format!("failed to serialize task_list result: {err}"))
+        })?;
+
+        Ok(ToolOutput::Function {
+            body: FunctionCallOutputBody::Text(content),
+            success: Some(true),
+        })
+    }
+
+    pub async fn task_get(
+        session: Arc<Session>,
+        turn: Arc<TurnContext>,
+        _call_id: String,
+        arguments: String,
+    ) -> Result<ToolOutput, FunctionCallError> {
+        let args: TaskGetArgs = parse_arguments(&arguments)?;
+        let store = task_store_for_team(session.as_ref(), turn.as_ref(), &args.team_id).await?;
+        let task = store
+            .get_task(&args.task_id)
+            .map_err(FunctionCallError::RespondToModel)?
+            .ok_or_else(|| {
+                FunctionCallError::RespondToModel(format!("task not found: {}", args.task_id))
+            })?;
+
+        let content = serde_json::to_string(&json!({ "task": task })).map_err(|err| {
+            FunctionCallError::Fatal(format!("failed to serialize task_get result: {err}"))
+        })?;
+
+        Ok(ToolOutput::Function {
+            body: FunctionCallOutputBody::Text(content),
+            success: Some(true),
+        })
+    }
+
+    pub async fn task_update(
+        session: Arc<Session>,
+        turn: Arc<TurnContext>,
+        _call_id: String,
+        arguments: String,
+    ) -> Result<ToolOutput, FunctionCallError> {
+        let args: TaskUpdateArgs = parse_arguments(&arguments)?;
+        let store = task_store_for_team(session.as_ref(), turn.as_ref(), &args.team_id).await?;
+        let task = store
+            .update_task(
+                &args.task_id,
+                TaskUpdate {
+                    status: args.status,
+                    owner: args.owner,
+                    subject: args.subject,
+                    description: args.description,
+                    active_form: args.active_form,
+                    blocks: args.blocks,
+                    blocked_by: args.blocked_by,
+                    metadata: args.metadata,
+                },
+            )
+            .map_err(FunctionCallError::RespondToModel)?
+            .ok_or_else(|| {
+                FunctionCallError::RespondToModel(format!("task not found: {}", args.task_id))
+            })?;
+
+        let content = serde_json::to_string(&json!({ "task": task })).map_err(|err| {
+            FunctionCallError::Fatal(format!("failed to serialize task_update result: {err}"))
+        })?;
+
+        Ok(ToolOutput::Function {
+            body: FunctionCallOutputBody::Text(content),
+            success: Some(true),
+        })
+    }
+
+    async fn task_store_for_team(
+        session: &Session,
+        turn: &TurnContext,
+        team_id: &str,
+    ) -> Result<TaskStore, FunctionCallError> {
+        let team_registry = session.services.agent_control.team_registry();
+        let mut registry = team_registry.lock().await;
+        registry
+            .configure_persistence(turn.config.codex_home.as_path())
+            .map_err(FunctionCallError::Fatal)?;
+        let team_name = registry
+            .team(team_id)
+            .map(|team| team.team_name.clone())
+            .ok_or_else(|| {
+                FunctionCallError::RespondToModel(format!("team not found: {team_id}"))
+            })?;
+        Ok(TaskStore::new(turn.config.codex_home.as_path(), &team_name))
     }
 }
 
@@ -2649,6 +2879,146 @@ mod tests {
             serde_json::from_str(&body).expect("close_team output should be JSON");
         assert_eq!(parsed["removed"], json!(true));
         assert_eq!(parsed["status"]["worker"], json!("not_found"));
+    }
+
+    #[tokio::test]
+    async fn task_tools_reject_unknown_team() {
+        let (session, turn) = make_session_and_context().await;
+        let invocation = invocation(
+            Arc::new(session),
+            Arc::new(turn),
+            "task_create",
+            function_payload(json!({
+                "team_id": "team-missing",
+                "subject": "Write tests"
+            })),
+        );
+        let Err(err) = MultiAgentHandler.handle(invocation).await else {
+            panic!("task_create should reject missing team");
+        };
+        assert_eq!(
+            err,
+            FunctionCallError::RespondToModel("team not found: team-missing".to_string())
+        );
+    }
+
+    #[tokio::test]
+    async fn task_tools_create_list_update_get_round_trip() {
+        let (session, turn) = make_session_and_context().await;
+        let team_id = register_team(&session, "alpha", "lead", vec![], false).await;
+        let session = Arc::new(session);
+        let turn = Arc::new(turn);
+
+        let create_invocation = invocation(
+            session.clone(),
+            turn.clone(),
+            "task_create",
+            function_payload(json!({
+                "team_id": team_id.clone(),
+                "subject": "Implement task store",
+                "description": "Persist tasks under codex home",
+                "owner": "lead",
+                "blocked_by": ["task-upstream"],
+                "metadata": { "priority": "high" }
+            })),
+        );
+        let create_output = MultiAgentHandler
+            .handle(create_invocation)
+            .await
+            .expect("task_create should succeed");
+        let ToolOutput::Function {
+            body: FunctionCallOutputBody::Text(create_body),
+            ..
+        } = create_output
+        else {
+            panic!("task_create should return text output");
+        };
+        let create_json: serde_json::Value =
+            serde_json::from_str(&create_body).expect("task_create output should be JSON");
+        let task_id = create_json["task"]["id"]
+            .as_str()
+            .expect("created task should have id")
+            .to_string();
+        assert_eq!(create_json["task"]["status"], json!("pending"));
+        assert_eq!(create_json["task"]["owner"], json!("lead"));
+
+        let list_invocation = invocation(
+            session.clone(),
+            turn.clone(),
+            "task_list",
+            function_payload(json!({
+                "team_id": team_id.clone()
+            })),
+        );
+        let list_output = MultiAgentHandler
+            .handle(list_invocation)
+            .await
+            .expect("task_list should succeed");
+        let ToolOutput::Function {
+            body: FunctionCallOutputBody::Text(list_body),
+            ..
+        } = list_output
+        else {
+            panic!("task_list should return text output");
+        };
+        let list_json: serde_json::Value =
+            serde_json::from_str(&list_body).expect("task_list output should be JSON");
+        assert_eq!(list_json["tasks"][0]["id"], json!(task_id));
+        assert_eq!(list_json["tasks"][0]["status"], json!("pending"));
+
+        let update_invocation = invocation(
+            session.clone(),
+            turn.clone(),
+            "task_update",
+            function_payload(json!({
+                "team_id": team_id.clone(),
+                "task_id": task_id,
+                "status": "in_progress",
+                "owner": "worker-1",
+                "blocks": ["task-2", "task-2"]
+            })),
+        );
+        let update_output = MultiAgentHandler
+            .handle(update_invocation)
+            .await
+            .expect("task_update should succeed");
+        let ToolOutput::Function {
+            body: FunctionCallOutputBody::Text(update_body),
+            ..
+        } = update_output
+        else {
+            panic!("task_update should return text output");
+        };
+        let update_json: serde_json::Value =
+            serde_json::from_str(&update_body).expect("task_update output should be JSON");
+        assert_eq!(update_json["task"]["status"], json!("in_progress"));
+        assert_eq!(update_json["task"]["owner"], json!("worker-1"));
+        assert_eq!(update_json["task"]["blocks"], json!(["task-2"]));
+
+        let get_invocation = invocation(
+            session,
+            turn,
+            "task_get",
+            function_payload(json!({
+                "team_id": team_id,
+                "task_id": update_json["task"]["id"]
+            })),
+        );
+        let get_output = MultiAgentHandler
+            .handle(get_invocation)
+            .await
+            .expect("task_get should succeed");
+        let ToolOutput::Function {
+            body: FunctionCallOutputBody::Text(get_body),
+            ..
+        } = get_output
+        else {
+            panic!("task_get should return text output");
+        };
+        let get_json: serde_json::Value =
+            serde_json::from_str(&get_body).expect("task_get output should be JSON");
+        assert_eq!(get_json["task"]["status"], json!("in_progress"));
+        assert_eq!(get_json["task"]["owner"], json!("worker-1"));
     }
 
     #[tokio::test]

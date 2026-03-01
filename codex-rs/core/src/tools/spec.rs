@@ -1399,6 +1399,158 @@ fn create_team_cleanup_tool() -> ToolSpec {
     })
 }
 
+fn create_task_create_tool() -> ToolSpec {
+    let properties = BTreeMap::from([
+        (
+            "subject".to_string(),
+            JsonSchema::String {
+                description: Some("A brief, actionable title for the task.".to_string()),
+            },
+        ),
+        (
+            "description".to_string(),
+            JsonSchema::String {
+                description: Some(
+                    "Detailed description of what needs to be done, including context and acceptance criteria."
+                        .to_string(),
+                ),
+            },
+        ),
+        (
+            "active_form".to_string(),
+            JsonSchema::String {
+                description: Some(
+                    "Present continuous form shown in spinner when in_progress (e.g., \"Running tests\")."
+                        .to_string(),
+                ),
+            },
+        ),
+    ]);
+
+    ToolSpec::Function(ResponsesApiTool {
+        name: "task_create".to_string(),
+        description: "Create a new task to track work in the current session.".to_string(),
+        strict: false,
+        parameters: JsonSchema::Object {
+            properties,
+            required: Some(vec!["subject".to_string()]),
+            additional_properties: Some(false.into()),
+        },
+    })
+}
+
+fn create_task_list_tool() -> ToolSpec {
+    ToolSpec::Function(ResponsesApiTool {
+        name: "task_list".to_string(),
+        description: "List all tasks in the current session.".to_string(),
+        strict: false,
+        parameters: JsonSchema::Object {
+            properties: BTreeMap::new(),
+            required: Some(vec![]),
+            additional_properties: Some(false.into()),
+        },
+    })
+}
+
+fn create_task_get_tool() -> ToolSpec {
+    let properties = BTreeMap::from([(
+        "task_id".to_string(),
+        JsonSchema::String {
+            description: Some("The ID of the task to retrieve.".to_string()),
+        },
+    )]);
+
+    ToolSpec::Function(ResponsesApiTool {
+        name: "task_get".to_string(),
+        description: "Retrieve full details of a task by its ID.".to_string(),
+        strict: false,
+        parameters: JsonSchema::Object {
+            properties,
+            required: Some(vec!["task_id".to_string()]),
+            additional_properties: Some(false.into()),
+        },
+    })
+}
+
+fn create_task_update_tool() -> ToolSpec {
+    let properties = BTreeMap::from([
+        (
+            "task_id".to_string(),
+            JsonSchema::String {
+                description: Some("The ID of the task to update.".to_string()),
+            },
+        ),
+        (
+            "status".to_string(),
+            JsonSchema::String {
+                description: Some(
+                    "New status: pending, in_progress, blocked, completed, or cancelled."
+                        .to_string(),
+                ),
+            },
+        ),
+        (
+            "subject".to_string(),
+            JsonSchema::String {
+                description: Some("New subject for the task.".to_string()),
+            },
+        ),
+        (
+            "description".to_string(),
+            JsonSchema::String {
+                description: Some("New description for the task.".to_string()),
+            },
+        ),
+        (
+            "active_form".to_string(),
+            JsonSchema::String {
+                description: Some(
+                    "Present continuous form shown in spinner when in_progress.".to_string(),
+                ),
+            },
+        ),
+        (
+            "owner".to_string(),
+            JsonSchema::String {
+                description: Some("New owner for the task.".to_string()),
+            },
+        ),
+        (
+            "add_blocks".to_string(),
+            JsonSchema::Array {
+                description: Some("Task IDs that this task blocks.".to_string()),
+                items: Box::new(JsonSchema::String { description: None }),
+            },
+        ),
+        (
+            "add_blocked_by".to_string(),
+            JsonSchema::Array {
+                description: Some("Task IDs that block this task.".to_string()),
+                items: Box::new(JsonSchema::String { description: None }),
+            },
+        ),
+        (
+            "metadata".to_string(),
+            JsonSchema::Object {
+                properties: BTreeMap::new(),
+                required: None,
+                additional_properties: Some(AdditionalProperties::Boolean(true)),
+            },
+        ),
+    ]);
+
+    ToolSpec::Function(ResponsesApiTool {
+        name: "task_update".to_string(),
+        description: "Update fields on an existing task.".to_string(),
+        strict: false,
+        parameters: JsonSchema::Object {
+            properties,
+            required: Some(vec!["task_id".to_string()]),
+            additional_properties: Some(false.into()),
+        },
+    })
+}
+
 fn create_test_sync_tool() -> ToolSpec {
     let barrier_properties = BTreeMap::from([
         (
@@ -2260,7 +2412,15 @@ pub(crate) fn build_specs(
         builder.register_handler("wait_team", multi_agent_handler.clone());
         builder.register_handler("close_agent", multi_agent_handler.clone());
         builder.register_handler("close_team", multi_agent_handler.clone());
-        builder.register_handler("team_cleanup", multi_agent_handler);
+        builder.register_handler("team_cleanup", multi_agent_handler.clone());
+        builder.push_spec(create_task_create_tool());
+        builder.push_spec(create_task_list_tool());
+        builder.push_spec(create_task_get_tool());
+        builder.push_spec(create_task_update_tool());
+        builder.register_handler("task_create", multi_agent_handler.clone());
+        builder.register_handler("task_list", multi_agent_handler.clone());
+        builder.register_handler("task_get", multi_agent_handler.clone());
+        builder.register_handler("task_update", multi_agent_handler);
     }
 
     if config.agent_jobs_tools {
@@ -2553,6 +2713,10 @@ mod tests {
                 "close_agent",
                 "close_team",
                 "team_cleanup",
+                "task_create",
+                "task_list",
+                "task_get",
+                "task_update",
                 "spawn_agents_on_csv",
             ],
         );
@@ -2592,6 +2756,10 @@ mod tests {
                 "close_agent",
                 "close_team",
                 "team_cleanup",
+                "task_create",
+                "task_list",
+                "task_get",
+                "task_update",
                 "spawn_agents_on_csv",
                 "report_agent_job_result",
             ],

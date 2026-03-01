@@ -13,6 +13,23 @@ pub(crate) fn format_subagent_notification_message(agent_id: &str, status: &Agen
     SUBAGENT_NOTIFICATION_FRAGMENT.wrap(payload_json)
 }
 
+pub(crate) fn format_team_notification_message(
+    team_id: &str,
+    member_name: &str,
+    agent_id: &str,
+    status: &AgentStatus,
+) -> String {
+    let payload_json = serde_json::json!({
+        "type": "teammate_idle",
+        "team_id": team_id,
+        "member_name": member_name,
+        "agent_id": agent_id,
+        "status": status,
+    })
+    .to_string();
+    SUBAGENT_NOTIFICATION_FRAGMENT.wrap(payload_json)
+}
+
 pub(crate) fn format_subagent_context_line(agent_id: &str, agent_nickname: Option<&str>) -> String {
     match agent_nickname.filter(|nickname| !nickname.is_empty()) {
         Some(agent_nickname) => format!("- {agent_id}: {agent_nickname}"),

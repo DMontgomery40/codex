@@ -7,6 +7,7 @@ use crate::find_thread_path_by_id_str;
 use crate::rollout::RolloutRecorder;
 use crate::session_prefix::format_subagent_context_line;
 use crate::session_prefix::format_subagent_notification_message;
+use crate::session_prefix::format_team_notification_message;
 use crate::state::TeamRegistry;
 use crate::state_db;
 use crate::thread_manager::ThreadManagerState;
@@ -390,18 +391,30 @@ impl AgentControl {
     ///
     /// This is only enabled for `SubAgentSource::ThreadSpawn`, where a parent thread exists and
     /// can receive completion notifications.
+    ///
+    /// Additionally, if the child thread is a member of a team (checked via `TeamRegistry`),
+    /// the team lead thread also receives a notification when the member reaches a final state.
+    /// This fires regardless of how the member was spawned -- the team lookup is centralized here.
     fn maybe_start_completion_watcher(
         &self,
         child_thread_id: ThreadId,
         session_source: Option<SessionSource>,
     ) {
-        let Some(SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
-            parent_thread_id, ..
-        })) = session_source
-        else {
-            return;
+        let parent_thread_id = match session_source {
+            Some(SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
+                parent_thread_id, ..
+            })) => Some(parent_thread_id),
+            _ => None,
         };
+
+        // If there's no parent AND we don't have a team registry, nothing to do.
+        if parent_thread_id.is_none() {
+            // Still check for team membership below -- agents manually added to a team
+            // after spawn should still get notifications.
+        }
+
         let control = self.clone();
+        let team_registry = Arc::clone(&self.team_registry);
         tokio::spawn(async move {
             let mut status_rx = match control.subscribe_status(child_thread_id).await {
                 Ok(rx) => rx,
@@ -422,15 +435,41 @@ impl AgentControl {
             let Ok(state) = control.upgrade() else {
                 return;
             };
-            let Ok(parent_thread) = state.get_thread(parent_thread_id).await else {
-                return;
+
+            // Notify the parent thread (existing behavior).
+            if let Some(parent_thread_id) = parent_thread_id
+                && let Ok(parent_thread) = state.get_thread(parent_thread_id).await
+            {
+                parent_thread
+                    .inject_user_message_without_turn(format_subagent_notification_message(
+                        &child_thread_id.to_string(),
+                        &status,
+                    ))
+                    .await;
+            }
+
+            // Notify the team lead if this thread is a team member.
+            // Skip if the parent already IS the team lead (avoid duplicate notifications).
+            let membership = {
+                let registry = team_registry.lock().await;
+                registry.team_membership(child_thread_id)
             };
-            parent_thread
-                .inject_user_message_without_turn(format_subagent_notification_message(
-                    &child_thread_id.to_string(),
-                    &status,
-                ))
-                .await;
+            if let Some(info) = membership {
+                let already_notified_lead =
+                    parent_thread_id.is_some_and(|pid| pid == info.lead_thread_id);
+                if !already_notified_lead
+                    && let Ok(lead_thread) = state.get_thread(info.lead_thread_id).await
+                {
+                    lead_thread
+                        .inject_user_message_without_turn(format_team_notification_message(
+                            &info.team_id,
+                            &info.member_name,
+                            &child_thread_id.to_string(),
+                            &status,
+                        ))
+                        .await;
+                }
+            }
         });
     }
 
