@@ -1541,13 +1541,14 @@ mod task {
         registry
             .configure_persistence(turn.config.codex_home.as_path())
             .map_err(FunctionCallError::Fatal)?;
-        let team_name = registry
-            .team(team_id)
-            .map(|team| team.team_name.clone())
-            .ok_or_else(|| {
-                FunctionCallError::RespondToModel(format!("team not found: {team_id}"))
-            })?;
-        Ok(TaskStore::new(turn.config.codex_home.as_path(), &team_name))
+        let team = registry.team(team_id).ok_or_else(|| {
+            FunctionCallError::RespondToModel(format!("team not found: {team_id}"))
+        })?;
+        Ok(TaskStore::new(
+            turn.config.codex_home.as_path(),
+            &team.team_id,
+            &team.team_name,
+        ))
     }
 }
 

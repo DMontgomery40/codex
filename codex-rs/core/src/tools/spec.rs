@@ -1402,6 +1402,12 @@ fn create_team_cleanup_tool() -> ToolSpec {
 fn create_task_create_tool() -> ToolSpec {
     let properties = BTreeMap::from([
         (
+            "team_id".to_string(),
+            JsonSchema::String {
+                description: Some("Team id returned by spawn_team.".to_string()),
+            },
+        ),
+        (
             "subject".to_string(),
             JsonSchema::String {
                 description: Some("A brief, actionable title for the task.".to_string()),
@@ -1425,48 +1431,90 @@ fn create_task_create_tool() -> ToolSpec {
                 ),
             },
         ),
+        (
+            "owner".to_string(),
+            JsonSchema::String {
+                description: Some("Optional owner for the task.".to_string()),
+            },
+        ),
+        (
+            "blocks".to_string(),
+            JsonSchema::Array {
+                description: Some("Task IDs that this task blocks.".to_string()),
+                items: Box::new(JsonSchema::String { description: None }),
+            },
+        ),
+        (
+            "blocked_by".to_string(),
+            JsonSchema::Array {
+                description: Some("Task IDs that currently block this task.".to_string()),
+                items: Box::new(JsonSchema::String { description: None }),
+            },
+        ),
+        (
+            "metadata".to_string(),
+            JsonSchema::Object {
+                properties: BTreeMap::new(),
+                required: None,
+                additional_properties: Some(AdditionalProperties::Boolean(true)),
+            },
+        ),
     ]);
 
     ToolSpec::Function(ResponsesApiTool {
         name: "task_create".to_string(),
-        description: "Create a new task to track work in the current session.".to_string(),
+        description: "Create a new task for a team.".to_string(),
         strict: false,
         parameters: JsonSchema::Object {
             properties,
-            required: Some(vec!["subject".to_string()]),
+            required: Some(vec!["team_id".to_string(), "subject".to_string()]),
             additional_properties: Some(false.into()),
         },
     })
 }
 
 fn create_task_list_tool() -> ToolSpec {
+    let properties = BTreeMap::from([(
+        "team_id".to_string(),
+        JsonSchema::String {
+            description: Some("Team id returned by spawn_team.".to_string()),
+        },
+    )]);
     ToolSpec::Function(ResponsesApiTool {
         name: "task_list".to_string(),
-        description: "List all tasks in the current session.".to_string(),
+        description: "List all tasks for a team.".to_string(),
         strict: false,
         parameters: JsonSchema::Object {
-            properties: BTreeMap::new(),
-            required: Some(vec![]),
+            properties,
+            required: Some(vec!["team_id".to_string()]),
             additional_properties: Some(false.into()),
         },
     })
 }
 
 fn create_task_get_tool() -> ToolSpec {
-    let properties = BTreeMap::from([(
-        "task_id".to_string(),
-        JsonSchema::String {
-            description: Some("The ID of the task to retrieve.".to_string()),
-        },
-    )]);
+    let properties = BTreeMap::from([
+        (
+            "team_id".to_string(),
+            JsonSchema::String {
+                description: Some("Team id returned by spawn_team.".to_string()),
+            },
+        ),
+        (
+            "task_id".to_string(),
+            JsonSchema::String {
+                description: Some("The ID of the task to retrieve.".to_string()),
+            },
+        ),
+    ]);
 
     ToolSpec::Function(ResponsesApiTool {
         name: "task_get".to_string(),
-        description: "Retrieve full details of a task by its ID.".to_string(),
+        description: "Retrieve full details of a team task by its ID.".to_string(),
         strict: false,
         parameters: JsonSchema::Object {
             properties,
-            required: Some(vec!["task_id".to_string()]),
+            required: Some(vec!["team_id".to_string(), "task_id".to_string()]),
             additional_properties: Some(false.into()),
         },
     })
@@ -1474,6 +1522,12 @@ fn create_task_get_tool() -> ToolSpec {
 
 fn create_task_update_tool() -> ToolSpec {
     let properties = BTreeMap::from([
+        (
+            "team_id".to_string(),
+            JsonSchema::String {
+                description: Some("Team id returned by spawn_team.".to_string()),
+            },
+        ),
         (
             "task_id".to_string(),
             JsonSchema::String {
@@ -1516,16 +1570,16 @@ fn create_task_update_tool() -> ToolSpec {
             },
         ),
         (
-            "add_blocks".to_string(),
+            "blocks".to_string(),
             JsonSchema::Array {
-                description: Some("Task IDs that this task blocks.".to_string()),
+                description: Some("Replace with task IDs that this task blocks.".to_string()),
                 items: Box::new(JsonSchema::String { description: None }),
             },
         ),
         (
-            "add_blocked_by".to_string(),
+            "blocked_by".to_string(),
             JsonSchema::Array {
-                description: Some("Task IDs that block this task.".to_string()),
+                description: Some("Replace with task IDs that block this task.".to_string()),
                 items: Box::new(JsonSchema::String { description: None }),
             },
         ),
@@ -1545,7 +1599,7 @@ fn create_task_update_tool() -> ToolSpec {
         strict: false,
         parameters: JsonSchema::Object {
             properties,
-            required: Some(vec!["task_id".to_string()]),
+            required: Some(vec!["team_id".to_string(), "task_id".to_string()]),
             additional_properties: Some(false.into()),
         },
     })

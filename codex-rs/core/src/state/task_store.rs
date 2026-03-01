@@ -71,9 +71,13 @@ pub(crate) struct TaskStore {
 }
 
 impl TaskStore {
-    pub(crate) fn new(codex_home: &Path, team_name: &str) -> Self {
+    pub(crate) fn new(codex_home: &Path, team_id: &str, team_name: &str) -> Self {
         Self {
-            team_dir: codex_home.join(TASK_ROOT_DIR).join(slugify(team_name)),
+            team_dir: codex_home.join(TASK_ROOT_DIR).join(format!(
+                "{}-{}",
+                slugify(team_name),
+                slugify(team_id)
+            )),
         }
     }
 
@@ -345,7 +349,7 @@ mod tests {
     #[test]
     fn create_list_get_update_round_trip() {
         let home = tempdir().expect("tempdir");
-        let store = TaskStore::new(home.path(), "Alpha Team");
+        let store = TaskStore::new(home.path(), "team-1", "Alpha Team");
 
         let created = store
             .create_task(NewTask {
@@ -407,7 +411,7 @@ mod tests {
     #[test]
     fn create_rejects_empty_subject() {
         let home = tempdir().expect("tempdir");
-        let store = TaskStore::new(home.path(), "alpha");
+        let store = TaskStore::new(home.path(), "team-1", "alpha");
 
         let result = store.create_task(NewTask {
             subject: "   ".to_string(),
@@ -424,7 +428,7 @@ mod tests {
     #[test]
     fn update_missing_task_returns_none() {
         let home = tempdir().expect("tempdir");
-        let store = TaskStore::new(home.path(), "alpha");
+        let store = TaskStore::new(home.path(), "team-1", "alpha");
 
         let updated = store
             .update_task(
@@ -439,9 +443,44 @@ mod tests {
     }
 
     #[test]
+    fn teams_with_same_name_use_separate_task_directories() {
+        let home = tempdir().expect("tempdir");
+        let alpha_one = TaskStore::new(home.path(), "team-1", "alpha");
+        let alpha_two = TaskStore::new(home.path(), "team-2", "alpha");
+
+        let first = alpha_one
+            .create_task(NewTask {
+                subject: "task one".to_string(),
+                description: None,
+                owner: None,
+                active_form: None,
+                blocks: vec![],
+                blocked_by: vec![],
+                metadata: BTreeMap::new(),
+            })
+            .expect("task should be created");
+        let second = alpha_two
+            .create_task(NewTask {
+                subject: "task two".to_string(),
+                description: None,
+                owner: None,
+                active_form: None,
+                blocks: vec![],
+                blocked_by: vec![],
+                metadata: BTreeMap::new(),
+            })
+            .expect("task should be created");
+
+        let one_tasks = alpha_one.list_tasks().expect("list tasks");
+        let two_tasks = alpha_two.list_tasks().expect("list tasks");
+        assert_eq!(one_tasks, vec![first]);
+        assert_eq!(two_tasks, vec![second]);
+    }
+
+    #[test]
     fn list_returns_empty_when_no_tasks_exist() {
         let home = tempdir().expect("tempdir");
-        let store = TaskStore::new(home.path(), "alpha");
+        let store = TaskStore::new(home.path(), "team-1", "alpha");
 
         let listed = store.list_tasks().expect("list should succeed");
         assert_eq!(listed, Vec::<Task>::new());
