@@ -69,7 +69,6 @@ Important scope note: these team features are fork-only and are not part of upst
 - File-backed team task tracking with ownership and dependency metadata.
 - Automatic lead notifications when teammate turns complete.
 - Team metadata persistence under `{codex_home}/teams/` and task persistence under `{codex_home}/tasks/`.
-- TUI support for opening the agent picker with `Shift+Down`.
 
 ### Enabling
 
@@ -78,14 +77,6 @@ Set `multi_agent = true` in your `~/.codex/config.toml` under `[features]`:
 ```toml
 [features]
 multi_agent = true
-```
-
-### Python overlay bypass
-
-If you previously used the Python PTY overlay (`~/.codex/agent-teams/`), you can bypass it and use the native fork implementation:
-
-```shell
-export CODEX_NATIVE_TEAMS=1
 ```
 
 This repository is licensed under the [Apache-2.0 License](LICENSE).
