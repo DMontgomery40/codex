@@ -57,4 +57,48 @@ You can also use Codex with an API key, but this requires [additional setup](htt
 - [**Installing & building**](./docs/install.md)
 - [**Open source fund**](./docs/open-source-fund.md)
 
+## Fork Notes: Native Agent Teams
+
+This fork ([DMontgomery40/codex](https://github.com/DMontgomery40/codex)) adds first-class multi-agent team workflows to the Codex CLI. Upstream `openai/codex` only provides basic subagent primitives (`spawn_agent`, `send_input`, `resume_agent`, `wait`, `close_agent`). This fork builds on those primitives to provide team orchestration, task management, and automatic teammate notifications.
+
+### Features
+
+**Team orchestration tools** -- Spawn, manage, and coordinate multi-agent teams:
+- `spawn_team`, `list_teams`, `get_team`, `team_member_status`
+- `team_message`, `team_broadcast`
+- `wait_team`, `close_team`, `team_cleanup`
+
+**Task management tools** -- File-backed task lists scoped per team:
+- `task_create`, `task_list`, `task_get`, `task_update`
+- Tasks support status tracking, ownership, dependencies (`blocks`/`blocked_by`), and metadata
+
+**Automatic idle notifications** -- When a teammate finishes a turn, the team lead automatically receives a notification via `inject_user_message_without_turn`. This is centralized in the agent control event flow (not per-tool callbacks), so it fires regardless of how the member was spawned.
+
+**Team state persistence** -- Teams persist to disk under `{codex_home}/teams/` as JSON config files. On restart, teams are restored with their member lists. Task data persists under `{codex_home}/tasks/<team-name>/` with cross-platform file locking.
+
+**TUI keybinding** -- Press `Shift+Down` to open the agent picker (in addition to `/agent` slash command).
+
+### Enabling
+
+Set `multi_agent = true` in your `~/.codex/config.toml` under `[features]`:
+
+```toml
+[features]
+multi_agent = true
+```
+
+### `/team` slash command
+
+```text
+/team <create|list|members|send|broadcast|wait|close|cleanup> [json-args]
+```
+
+### Python overlay bypass
+
+If you previously used the Python PTY overlay (`~/.codex/agent-teams/`), you can bypass it and use native team tools exclusively:
+
+```shell
+export CODEX_NATIVE_TEAMS=1
+```
+
 This repository is licensed under the [Apache-2.0 License](LICENSE).
