@@ -4498,6 +4498,15 @@ async fn team_slash_command_without_args_shows_usage() {
 }
 
 #[tokio::test]
+async fn shift_down_opens_agent_picker() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
+
+    chat.handle_key_event(KeyEvent::new(KeyCode::Down, KeyModifiers::SHIFT));
+
+    assert_matches!(rx.try_recv(), Ok(AppEvent::OpenAgentPicker));
+}
+
+#[tokio::test]
 async fn team_slash_list_submits_list_teams_prompt() {
     let (mut chat, _rx, mut op_rx) = make_chatwidget_manual(None).await;
     configure_session(&mut chat);

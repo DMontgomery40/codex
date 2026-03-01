@@ -689,6 +689,7 @@ fn shortcut_overlay_lines(state: ShortcutsState) -> Vec<Line<'static>> {
     let mut quit = Line::from("");
     let mut show_transcript = Line::from("");
     let mut change_mode = Line::from("");
+    let mut agents = Line::from("");
 
     for descriptor in SHORTCUTS {
         if let Some(text) = descriptor.overlay_entry(state) {
@@ -704,6 +705,7 @@ fn shortcut_overlay_lines(state: ShortcutsState) -> Vec<Line<'static>> {
                 ShortcutId::Quit => quit = text,
                 ShortcutId::ShowTranscript => show_transcript = text,
                 ShortcutId::ChangeMode => change_mode = text,
+                ShortcutId::Agents => agents = text,
             }
         }
     }
@@ -721,6 +723,9 @@ fn shortcut_overlay_lines(state: ShortcutsState) -> Vec<Line<'static>> {
     ];
     if change_mode.width() > 0 {
         ordered.push(change_mode);
+    }
+    if agents.width() > 0 {
+        ordered.push(agents);
     }
     ordered.push(Line::from(""));
     ordered.push(show_transcript);
@@ -802,6 +807,7 @@ enum ShortcutId {
     Quit,
     ShowTranscript,
     ChangeMode,
+    Agents,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -983,6 +989,15 @@ const SHORTCUTS: &[ShortcutDescriptor] = &[
         }],
         prefix: "",
         label: " to change mode",
+    },
+    ShortcutDescriptor {
+        id: ShortcutId::Agents,
+        bindings: &[ShortcutBinding {
+            key: key_hint::shift(KeyCode::Down),
+            condition: DisplayCondition::Always,
+        }],
+        prefix: "",
+        label: " for agents",
     },
 ];
 

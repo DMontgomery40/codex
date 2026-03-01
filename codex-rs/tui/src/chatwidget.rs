@@ -3304,6 +3304,15 @@ impl ChatWidget {
                 self.quit_shortcut_key = None;
             }
             KeyEvent {
+                code: KeyCode::Down,
+                modifiers: KeyModifiers::SHIFT,
+                kind: KeyEventKind::Press,
+                ..
+            } if self.bottom_pane.no_modal_or_popup_active() => {
+                self.app_event_tx.send(AppEvent::OpenAgentPicker);
+                return;
+            }
+            KeyEvent {
                 code: KeyCode::Char(c),
                 modifiers,
                 kind: KeyEventKind::Press,

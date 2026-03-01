@@ -61,7 +61,7 @@ impl PendingThreadApprovals {
             Line::from(vec![
                 "    ".into(),
                 "/agent".cyan().bold(),
-                " to switch threads".dim(),
+                " or Shift+Down to switch threads".dim(),
             ])
             .dim(),
         );
@@ -118,9 +118,10 @@ mod tests {
 
         assert_snapshot!(
             snapshot_rows(&widget, 40).replace(' ', "."),
-            @r"
-..!.Approval.needed.in.Robie.[explorer].
-..../agent.to.switch.threads............"
+            @"
+        ..!.Approval.needed.in.Robie.[explorer].
+        ..../agent.or.Shift+Down.to.switch.threa
+        "
         );
     }
 
@@ -141,7 +142,7 @@ mod tests {
 ..!.Approval.needed.in.Robie.[explorer].....
 ..!.Approval.needed.in.Inspector............
 ............................................
-..../agent.to.switch.threads................"
+..../agent.or.Shift+Down.to.switch.threads.."
         );
     }
 }
