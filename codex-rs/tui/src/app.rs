@@ -1882,8 +1882,8 @@ impl App {
                     if size.width <= 1 || size.height <= 1 {
                         // Some terminals briefly report 0x0/1x1 while a new tab is
                         // initializing. Skip rendering for that transient state so we
-                        // don't draw a one-column, left-edge-stacked UI.
-                        tui.frame_requester().schedule_frame();
+                        // don't draw a one-column, left-edge-stacked UI. A redraw will
+                        // happen naturally on the next terminal event (for example resize).
                         return Ok(AppRunControl::Continue);
                     }
                     if self.backtrack_render_pending {

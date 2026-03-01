@@ -3934,7 +3934,19 @@ impl ChatWidget {
                 self.bottom_pane.drain_pending_submission_state();
             }
             SlashCommand::Team if !trimmed.is_empty() => {
-                let mut parts = trimmed.splitn(2, char::is_whitespace);
+                let prepared_args = self.bottom_pane.composer_text_with_pending();
+                let normalized_args = prepared_args
+                    .trim()
+                    .strip_prefix("/team")
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+                    .unwrap_or(trimmed);
+                if normalized_args.is_empty() {
+                    self.dispatch_command(SlashCommand::Team);
+                    return;
+                }
+
+                let mut parts = normalized_args.splitn(2, char::is_whitespace);
                 let Some(subcommand) = parts.next() else {
                     self.dispatch_command(SlashCommand::Team);
                     return;
