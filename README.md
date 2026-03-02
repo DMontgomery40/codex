@@ -1,4 +1,4 @@
-<p align="center"><code>npm i -g @openai/codex</code><br />or <code>brew install --cask codex</code></p>
+<p align="center"><code>curl -fsSL https://raw.githubusercontent.com/DMontgomery40/codex/main/scripts/install/install.sh | sh</code><br /><strong>Fork install script (Agent Teams)</strong><br />or <code>npm i -g @openai/codex</code><br />or <code>brew install --cask codex</code></p>
 <p align="center"><strong>Codex CLI</strong> is a coding agent from OpenAI that runs locally on your computer.
 <p align="center">
   <img src="https://github.com/openai/codex/blob/main/.github/codex-cli-splash.png" alt="Codex CLI splash" width="80%" />
@@ -15,6 +15,11 @@ If you want Codex in your code editor (VS Code, Cursor, Windsurf), <a href="http
 ### Installing and running Codex CLI
 
 Install globally with your preferred package manager:
+
+```shell
+# Install this fork via script (Agent Teams docs/tools in this fork)
+curl -fsSL https://raw.githubusercontent.com/DMontgomery40/codex/main/scripts/install/install.sh | sh
+```
 
 ```shell
 # Install using npm
