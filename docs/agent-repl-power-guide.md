@@ -20,6 +20,66 @@ This guide intentionally skips beginner tips. It emphasizes:
 - External REPL command-center patterns
 - Tactics repeatedly mentioned in GitHub discussions and X chatter
 
+## Real REPL hacks from power users (actual field patterns)
+
+This section is intentionally concrete and source-backed. No basics.
+
+### 1) Codex REPL/operator tricks
+
+1. Use `streamable_shell = true` for interactive CLI installers/wizards (for example `npx create-next-app`) where the agent can send keystrokes to running shells.
+2. Turn on `js_repl` and use it as a persistent command bus with top-level `await`; state survives across calls.
+3. If you want all direct tool calls to route through REPL orchestration, enable `js_repl_tools_only = true` and call tools from JS with `await codex.tool(...)`.
+4. Use per-cell timeout pragmas in REPL (`// codex-js-repl: timeout_ms=15000`) and use `js_repl_reset` aggressively to recover from state poison.
+5. Preload custom/private Node modules for REPL experiments via `CODEX_JS_REPL_NODE_MODULE_DIRS` or `js_repl_node_module_dirs`, and use dynamic import (`await import(...)`) instead of static top-level `import`.
+6. Create role launchers in shell (`codex-swift`, `codex-bug`, etc.) that inject different instructions; this pattern comes directly from openai/codex discussion usage.
+7. Keep reusable prompt macros under `~/.codex/prompts` and trigger them as slash-command inserts inside interactive sessions.
+
+### 2) Claude Code REPL/operator tricks
+
+1. Start long-running dev servers in background (`Ctrl+B`) and have Claude run integration tests against the live server loop.
+2. For external orchestration, run print mode with event streaming: `claude -p --output-format stream-json --include-partial-messages`.
+3. Branch alternative solutions from same context without collisions: `claude --resume <session> --fork-session`.
+4. Gate risky tool usage with hooks using MCP regex matchers (for example `mcp__.*__write.*`) to block or warn before side effects.
+5. Use `--agents '<json>'` for temporary per-run specialist agents instead of permanently editing agent config files.
+
+### 3) OpenCode and Qwen REPL/operator tricks
+
+1. Use `opencode run --attach http://localhost:4096 ...` against a long-lived `opencode web`/`serve` backend to avoid MCP cold boots each run.
+2. Use OpenCode command templates with `$ARGUMENTS`, positional args, shell interpolation, and `subtask: true` to keep your main context clean.
+3. In OpenCode permissions, exploit ordered rules with “last matching rule wins” and use `external_directory` to safely allow operations outside cwd.
+4. In Qwen, cycle runtime approval posture during a live session with `Shift+Tab` (Plan, Auto-Edit, YOLO, etc.) instead of restarting.
+5. Enable Qwen checkpointing and use `/restore` to hard-rewind files and conversation state after bad tool runs.
+6. For script pipelines, use Qwen `--output-format stream-json --include-partial-messages` plus `--continue`/`--resume` for resumable automation loops.
+
+### 4) External REPL stacks people are actively using
+
+1. `tmux-mcp`: expose tmux sessions to agents so they can inspect panes, tail logs, and interact with live terminal workflows.
+2. `codex-cli-farm`: run many Codex/Claude panes with durable logs, then `codex-save` and `codex-restore -a` to snapshot/rehydrate your whole farm.
+3. `xlaude`: map each git worktree to an agent session and auto-append `codex resume <session-id>` when worktree `cwd` matches.
+4. `claude-code-commands`: issue-driven parallel implementation flows (`...run-parallel`) that open tmux panes for competing solutions.
+5. `ccmanager`: multi-agent session manager with live busy/waiting/idle states and optional cross-worktree session-data copy.
+
+### Source links for this section
+
+- https://x.com/nummanali/status/1992321623597121710
+- https://x.com/iannuttall/status/2022016174259941867
+- https://github.com/openai/codex/discussions/7296
+- https://raw.githubusercontent.com/openai/codex/main/docs/js_repl.md
+- https://x.com/claude_code/status/1955210320244326460
+- https://code.claude.com/docs/en/cli-reference.md
+- https://code.claude.com/docs/en/hooks.md
+- https://raw.githubusercontent.com/anomalyco/opencode/dev/packages/web/src/content/docs/commands.mdx
+- https://raw.githubusercontent.com/anomalyco/opencode/dev/packages/web/src/content/docs/cli.mdx
+- https://raw.githubusercontent.com/anomalyco/opencode/dev/packages/web/src/content/docs/permissions.mdx
+- https://raw.githubusercontent.com/QwenLM/qwen-code-docs/main/website/content/en/users/features/approval-mode.md
+- https://raw.githubusercontent.com/QwenLM/qwen-code-docs/main/website/content/en/users/features/checkpointing.md
+- https://raw.githubusercontent.com/QwenLM/qwen-code-docs/main/website/content/en/users/features/headless.md
+- https://x.com/camsoft2000/status/1964045997287596428
+- https://raw.githubusercontent.com/waskosky/codex-cli-farm/main/README.md
+- https://raw.githubusercontent.com/Xuanwo/xlaude/main/README.md
+- https://raw.githubusercontent.com/o-gi/claude-code-commands/main/README.md
+- https://raw.githubusercontent.com/kbwo/ccmanager/main/README.md
+
 ## 0) 10-minute setup for power users
 
 1. Keep **one control terminal** and **one execution terminal** minimum.
@@ -474,4 +534,3 @@ Use checkpointing before large refactors and restore immediately when regression
 ### X thread aggregation used for synthesis
 
 - https://threadreaderapp.com/thread/1916204585787324441.html
-
